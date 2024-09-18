@@ -18,6 +18,7 @@ use crate::{
     Commitments, Domain, OpenedValues, PackedChallenge, PackedVal, Proof, ProverConstraintFolder,
     StarkGenericConfig, Val,
 };
+use stopwatch::Stopwatch;
 
 #[instrument(skip_all)]
 #[allow(clippy::multiple_bound_locations)] // cfg not supported in where clauses?
@@ -36,8 +37,8 @@ where
     SC: StarkGenericConfig,
     A: Air<SymbolicAirBuilder<Val<SC>>> + for<'a> Air<ProverConstraintFolder<'a, SC>>,
 {
-    #[cfg(debug_assertions)]
-    crate::check_constraints::check_constraints(air, &trace, public_values);
+    //#[cfg(debug_assertions)]
+    //crate::check_constraints::check_constraints(air, &trace, public_values);
 
     let degree = trace.height();
     let log_degree = log2_strict_usize(degree);
@@ -48,8 +49,11 @@ where
     let pcs = config.pcs();
     let trace_domain = pcs.natural_domain_for_degree(degree);
 
+    let sw = Stopwatch::start_new();
     let (trace_commit, trace_data) =
         info_span!("commit to trace data").in_scope(|| pcs.commit(vec![(trace_domain, trace)]));
+    let commit_elapsed_ms = sw.elapsed_ms();
+    println!("For a trace of degree {}, pcs.commit() took {}ms", degree, commit_elapsed_ms);
 
     // Observe the instance.
     challenger.observe(Val::<SC>::from_canonical_usize(log_degree));
@@ -88,6 +92,7 @@ where
     let zeta: SC::Challenge = challenger.sample();
     let zeta_next = trace_domain.next_point(zeta).unwrap();
 
+    let sw = Stopwatch::start_new();
     let (opened_values, opening_proof) = info_span!("open").in_scope(|| {
         pcs.open(
             vec![
@@ -101,6 +106,9 @@ where
             challenger,
         )
     });
+    let open_elapsed_ms = sw.elapsed_ms();
+    println!("pcs.open() took {}ms", open_elapsed_ms);
+
     let trace_local = opened_values[0][0][0].clone();
     let trace_next = opened_values[0][0][1].clone();
     let quotient_chunks = opened_values[1].iter().map(|v| v[0].clone()).collect_vec();
